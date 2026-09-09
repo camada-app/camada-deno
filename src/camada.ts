@@ -6,8 +6,8 @@
 // polls on a timer by default (CAMADA_SERVERLESS=1 or `mode: 'lazy'` for Deno Deploy), and there
 // is no `waitUntil`: the event flush is a fire-and-forget promise the process keeps alive.
 import iife from '@camada/browser/iife-string';
-import { TAP_DENO, guarded } from '@camada/core';
-import { createFetchCamada, withSetCookie, type FetchCamada, type FetchCamadaOptions, type FetchVars } from '@camada/core/fetch';
+import { TAP_DENO, logRateLimited } from '@camada/core';
+import { createFetchCamada, withSetCookie, track as coreTrack, scriptTag as coreScriptTag, type FetchCamada, type FetchCamadaOptions, type FetchVars } from '@camada/core/fetch';
 import { SDK_ID } from './version.js';
 
 export type CamadaDenoOptions = FetchCamadaOptions;
@@ -20,23 +20,31 @@ export interface ServeHandlerInfo {
 export type ServeHandler = (req: Request, info: ServeHandlerInfo) => Response | Promise<Response>;
 export type WrappedHandler = (req: Request, info: ServeHandlerInfo) => Promise<Response>;
 
-type DenoGlobal = { env: { toObject(): Record<string, string> } };
-type ProcessGlobal = { env?: Record<string, string | undefined> };
+type DenoGlobal = { env: { get(name: string): string | undefined } };
 type Env = Record<string, string | undefined>;
 
 // Every camada() call owns one pipeline; resetCamada() must reach all of them.
 const instances = new Set<FetchCamada>();
 // The per-request slot: Deno hands the same Request object to the handler, so track() and
 // scriptTag() find their vars by it without the app threading anything through.
-const slots = new WeakMap<Request, { cam: FetchCamada; vars: FetchVars }>();
+const slots = new WeakMap<Request, FetchVars>();
 
-/** Deno.env over process.env (Deno 2 exposes both; a Node test process only the latter). A denied
- *  --allow-env throws on either read, and a throw here must cost enforcement, never the response. */
-function hostEnv(): Env {
+/** Every key core reads, fetched one by one: `Deno.env.get` works under a granular
+ *  `--allow-env=CAMADA_KEY,…` grant, where `toObject()` (and enumerating `process.env`) throws. */
+const ENV_KEYS = ['CAMADA_KEY', 'CAMADA_TOKEN', 'CAMADA_SNAPSHOT_TOKEN', 'CAMADA_INGEST_URL', 'CAMADA_SNAPSHOT_URL', 'CAMADA_TRUSTED_PROXY', 'CAMADA_CHALLENGE', 'CAMADA_DISABLED', 'CAMADA_SERVERLESS'];
+
+/** Deno.env where there is a Deno (a Node test process has only process.env). A key the grant does
+ *  not cover throws NotCapable; that costs enforcement, never the response, and is logged as what it is. */
+function hostEnv(): Env | undefined {
   const deno = (globalThis as { Deno?: DenoGlobal }).Deno;
-  const proc = (globalThis as { process?: ProcessGlobal }).process;
-  const base = guarded(() => ({ ...proc?.env }), {} as Env);
-  return deno ? { ...base, ...guarded(() => deno.env.toObject(), {} as Env) } : base;
+  if (!deno) return globalThis.process?.env;
+  const env: Env = {};
+  let denied = 0;
+  for (const k of ENV_KEYS) {
+    try { env[k] = deno.env.get(k); } catch { denied++; }
+  }
+  if (denied === ENV_KEYS.length) logRateLimited(new Error('Deno.env access denied — run with --allow-env (or --allow-env=CAMADA_KEY,CAMADA_INGEST_URL,CAMADA_SNAPSHOT_URL); camada is inactive'));
+  return env;
 }
 
 /** Only a TCP peer is an address; a unix socket has none, and camada then sees no client ip. */
@@ -57,7 +65,7 @@ export function camada(opts: CamadaDenoOptions = {}): (handler: ServeHandler) =>
     const r = await cam.before(req, { peer: peerOf(info), env: hostEnv() });
     if (!r) return handler(req, info);
     if (r.response) return r.response;
-    slots.set(req, { cam, vars: r.vars });
+    slots.set(req, r.vars);
     let res: Response;
     try {
       res = await handler(req, info);
@@ -72,19 +80,12 @@ export function camada(opts: CamadaDenoOptions = {}): (handler: ServeHandler) =>
 
 /** Records an outcome the handler knows (`login_failed`, `signup`, ...), joined to this request's
  *  event. Never throws; a silent no-op where the wrapper did not run. See @camada/core/fetch. */
-export function track(req: Request, event: string, data?: { user?: string }): Promise<void> {
-  const s = slots.get(req);
-  return s ? s.cam.track(s.vars, event, data) : Promise.resolve();
-}
+export const track = (req: Request, event: string, data?: { user?: string }): Promise<void> => coreTrack(slots.get(req), event, data);
 
 /** The `<script>` tag for an HTML response; `''` where the wrapper did not run or the beacon is off. */
-export function scriptTag(req: Request): string {
-  const s = slots.get(req);
-  return s ? s.cam.scriptTag(s.vars) : '';
-}
+export const scriptTag = (req: Request): string => coreScriptTag(slots.get(req));
 
-/** Test/reset hook: stops every poller and queue this module created and drops their engines. */
+/** Test/reset hook: stops every poller and queue this module created and drops their engines; the wrappers stay wired and rebuild lazily. */
 export function resetCamada(): void {
   for (const cam of instances) cam.reset();
-  instances.clear();
 }

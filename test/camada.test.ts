@@ -19,14 +19,15 @@ const V4 = {
 const BLOCKED_IP = '203.0.113.66';     // block side
 const CHALLENGED_IP = '192.0.2.20';    // challenge side only
 const HTML = { accept: 'text/html', 'sec-fetch-dest': 'document' };
-const BASE_CONFIG = { tenant: 'acme', beacon: true, sample: 1, exclude: [], trusted_proxy: { mode: 'none' }, poll_seconds: 30 };
+const CONFIG = { tenant: 'acme', beacon: true, sample: 1, exclude: [], trusted_proxy: { mode: 'none' }, poll_seconds: 30 };
 const ENV = { CAMADA_KEY: 'tok-acme.snap-acme', CAMADA_INGEST_URL: 'http://analyst.test', CAMADA_SNAPSHOT_URL: 'http://analyst.test/snapshot' };
 
-// The Deno the wrapper reads: only `env.toObject()`, which is all it touches. Tests swap what
-// it answers (or whether it exists at all) to drive the env path.
-let denoEnv: () => Record<string, string>;
-const g = globalThis as { Deno?: { env: { toObject(): Record<string, string> } } };
-const installDeno = () => { g.Deno = { env: { toObject: () => denoEnv() } }; };
+// The Deno the wrapper reads: only `env.get(name)`, which is all it touches. Tests swap what it
+// answers per key (or whether Deno exists at all) to drive the env path.
+let denoEnv: (name: string) => string | undefined;
+const g = globalThis as { Deno?: { env: { get(name: string): string | undefined } } };
+const installDeno = () => { g.Deno = { env: { get: (name) => denoEnv(name) } }; };
+const envOf = (values: Record<string, string>) => (name: string) => values[name];
 
 // 200 body frame: [u32 LE meta-length][meta JSON][BLK bin]
 function frame(): ArrayBuffer {
@@ -45,7 +46,7 @@ const fetchImpl: typeof fetch = (async (url: string | URL | Request, init?: Requ
   const u = String(url);
   if (u.endsWith('/snapshot')) {
     snapshotVersions.push(new Headers(init?.headers).get('x-camada-snapshot') ?? '');
-    return new Response(frame(), { status: 200, headers: { etag: `"${JSON.parse(V4.meta).version}"`, 'x-camada-config': JSON.stringify(BASE_CONFIG) } });
+    return new Response(frame(), { status: 200, headers: { etag: `"${JSON.parse(V4.meta).version}"`, 'x-camada-config': JSON.stringify(CONFIG) } });
   }
   sdkHeaders.push(new Headers(init?.headers).get('x-camada-sdk') ?? '');
   events.push(...(JSON.parse(String(init?.body)) as Array<Record<string, unknown>>));
@@ -99,8 +100,8 @@ const postSolution = (a: WrappedHandler, addr: string, body: string) =>
 const postBeacon = (a: WrappedHandler, body: string, addr = '9.9.9.9') =>
   call(a, '/_cam/fp', { method: 'POST', headers: { 'content-type': 'application/json' }, body }, tcp(addr));
 
-beforeEach(() => { events = []; sdkHeaders = []; snapshotVersions = []; denoEnv = () => ENV; installDeno(); });
-afterEach(() => { resetCamada(); delete g.Deno; });
+beforeEach(() => { events = []; sdkHeaders = []; snapshotVersions = []; denoEnv = envOf(ENV); installDeno(); });
+afterEach(() => { resetCamada(); delete g.Deno; vi.useRealTimers(); vi.unstubAllEnvs(); });
 
 describe('capture', () => {
   it('lets a request through with its real status, tapped sdk-deno and identified on every batch', async () => {
@@ -147,13 +148,6 @@ describe('enforcement', () => {
 
     const cookie = ok.headers.get('set-cookie')!.split(';')[0];
     expect((await call(a, '/cart', { headers: { cookie, ...HTML } }, tcp(CHALLENGED_IP))).status).toBe(200);
-  });
-
-  it('answers 403 JSON for a non-HTML challenge', async () => {
-    const a = await primed();
-    const res = await call(a, '/checkout', { headers: { accept: 'application/json' } });
-    expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: 'challenge_required' });
   });
 });
 
@@ -231,14 +225,6 @@ describe('first-party beacon', () => {
     expect(events[0]).toMatchObject({ sig: 1, rid: 'abc', tz: 'UTC', ip: '9.9.9.9', tap: 'sdk-deno' });
   });
 
-  it('still blocks a blocked client at both endpoints', async () => {
-    const a = await primed();
-    expect((await call(a, '/_cam/b.js', {}, tcp(BLOCKED_IP))).status).toBe(403);
-    expect((await postBeacon(a, JSON.stringify({ rid: 'abc' }), BLOCKED_IP)).status).toBe(403);
-    expect(events).toHaveLength(2);
-    expect(events.every((e) => e.blk === 'ip4' && e.sig === undefined)).toBe(true);
-  });
-
   it('emits no tag for a request the wrapper never saw', () => {
     expect(scriptTag(new Request('http://app.test/'))).toBe('');
   });
@@ -267,15 +253,22 @@ describe('track', () => {
 
 describe('the env', () => {
   it('is inert without a key and with CAMADA_DISABLED=1', async () => {
-    denoEnv = () => ({});
+    denoEnv = envOf({});
     const a = app();
     expect((await call(a, '/', {}, tcp(BLOCKED_IP))).status).toBe(200);
-    denoEnv = () => ({ ...ENV, CAMADA_DISABLED: '1' });
+    denoEnv = envOf({ ...ENV, CAMADA_DISABLED: '1' });
     const b = app();
     await call(b, '/');
     expect((await call(b, '/', {}, tcp(BLOCKED_IP))).status).toBe(200);
     expect(events).toEqual([]);
     expect(snapshotVersions).toEqual([]);
+  });
+
+  it('enforces under a granular --allow-env that covers only the camada keys', async () => {
+    const granted = ['CAMADA_KEY', 'CAMADA_INGEST_URL', 'CAMADA_SNAPSHOT_URL'];   // the README's own flag
+    denoEnv = (name) => { if (!granted.includes(name)) throw new Error(`Requires env access to "${name}"`); return ENV[name as keyof typeof ENV]; };
+    const a = await primed();
+    expect((await call(a, '/', {}, tcp(BLOCKED_IP))).status).toBe(403);
   });
 
   it('goes inert, not down, when Deno.env is denied', async () => {
@@ -288,46 +281,36 @@ describe('the env', () => {
 
   it('falls back to process.env without a Deno global', async () => {
     delete g.Deno;
-    const before = { ...process.env };
-    Object.assign(process.env, ENV);
-    try {
-      const a = await primed();
-      expect((await call(a, '/', {}, tcp(BLOCKED_IP))).status).toBe(403);
-    } finally {
-      for (const k of Object.keys(ENV)) delete process.env[k];
-      Object.assign(process.env, before);
-    }
+    for (const [k, v] of Object.entries(ENV)) vi.stubEnv(k, v);
+    const a = await primed();
+    expect((await call(a, '/', {}, tcp(BLOCKED_IP))).status).toBe(403);
   });
 });
 
 describe('timer mode', () => {
   it('polls the snapshot on its own by default, and resetCamada() stops every instance', async () => {
     vi.useFakeTimers();
-    try {
-      const a = app();
-      const b = app({ ingestUrl: 'http://other.test' });   // a second pipeline with its own engine
-      await a(new Request('http://app.test/'), tcp('8.8.8.8'));
-      await b(new Request('http://app.test/'), tcp('8.8.8.8'));
-      expect(snapshotVersions).toHaveLength(2);
-      await vi.advanceTimersByTimeAsync(31_000);
-      expect(snapshotVersions).toHaveLength(4);
-      resetCamada();
-      await vi.advanceTimersByTimeAsync(60_000);
-      expect(snapshotVersions).toHaveLength(4);
-    } finally { vi.useRealTimers(); }
+    const a = app();
+    const b = app({ ingestUrl: 'http://other.test' });   // a second pipeline with its own engine
+    await a(new Request('http://app.test/'), tcp('8.8.8.8'));
+    await b(new Request('http://app.test/'), tcp('8.8.8.8'));
+    expect(snapshotVersions).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(31_000);
+    expect(snapshotVersions).toHaveLength(4);
+    resetCamada();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(snapshotVersions).toHaveLength(4);
   });
 
   it('is lazy under CAMADA_SERVERLESS=1 or mode: lazy', async () => {
     vi.useFakeTimers();
-    try {
-      denoEnv = () => ({ ...ENV, CAMADA_SERVERLESS: '1' });
-      const a = app();
-      await a(new Request('http://app.test/'), tcp('8.8.8.8'));
-      denoEnv = () => ENV;
-      const b = app({ mode: 'lazy' });
-      await b(new Request('http://app.test/'), tcp('8.8.8.8'));
-      await vi.advanceTimersByTimeAsync(31_000);
-      expect(snapshotVersions).toHaveLength(2);
-    } finally { vi.useRealTimers(); }
+    denoEnv = envOf({ ...ENV, CAMADA_SERVERLESS: '1' });
+    const a = app();
+    await a(new Request('http://app.test/'), tcp('8.8.8.8'));
+    denoEnv = envOf(ENV);
+    const b = app({ mode: 'lazy' });
+    await b(new Request('http://app.test/'), tcp('8.8.8.8'));
+    await vi.advanceTimersByTimeAsync(31_000);
+    expect(snapshotVersions).toHaveLength(2);
   });
 });

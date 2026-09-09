@@ -22,8 +22,10 @@ import { camada } from '@camada/deno';
 Deno.serve(camada()((req, info) => new Response('hello')));
 ```
 
-Env (printed by camada onboarding / `npm run seed` in dev), read through `Deno.env` — run with
-`--allow-env` (or `--allow-env=CAMADA_KEY,CAMADA_INGEST_URL,CAMADA_SNAPSHOT_URL`):
+Env (printed by camada onboarding / `npm run seed` in dev), read key by key through
+`Deno.env.get` — run with `--allow-env`, or the granular
+`--allow-env=CAMADA_KEY,CAMADA_INGEST_URL,CAMADA_SNAPSHOT_URL` (a key outside the grant simply
+reads as unset):
 
 ```
 CAMADA_KEY=<ingest_token>.<snap_token>
@@ -31,8 +33,8 @@ CAMADA_INGEST_URL=http://localhost:8787        # dev only; defaults to productio
 ```
 
 `camada()` reads the env on each request and builds its engine on the first configured one; a
-denied env read (no `--allow-env`) is caught, logged once, and leaves the wrapper inert — the app
-still answers. An app that reads its own config can pass the values instead:
+denied env read (no `--allow-env` at all) is caught, logged as denied at most once a minute, and
+leaves the wrapper inert — the app still answers. An app that reads its own config can pass the values instead:
 
 ```ts
 Deno.serve(camada({ key: MY_KEY, ingestUrl: MY_INGEST })(handler));
@@ -81,7 +83,7 @@ secret. Without `CAMADA_KEY` the wrapper is inert (one log line, no requests, no
 | `snapshotVersion` | `5` | `4` drops the custom rules, `3` the allow/challenge sides too |
 | `scriptPath` | `/_cam/b.js` | where the first-party beacon script is served |
 | `fpPath` | `/_cam/fp` | where that script posts the beacon; keep it in `scriptPath`'s directory |
-| `mode` | `timer` | `timer` polls on an interval; `lazy` checks per request (`CAMADA_SERVERLESS=1` forces it) |
+| `mode` | `timer` (or `lazy`) | `timer` polls the snapshot on an unref'd interval (long-lived process); `lazy` refreshes it per request off-path. `CAMADA_SERVERLESS=1` forces `lazy` |
 | `env` | `Deno.env` | overrides the process env (tests, and apps that read config themselves) |
 
 `CAMADA_CHALLENGE=0` in the env switches the challenge off without a code change.
@@ -143,9 +145,7 @@ The in-app position: the beacon, the client hints and headers, the settled statu
 session and the app context from `track()`. Deno vouches for the socket peer (`info.remoteAddr`)
 and nothing else about the connection: no ASN, no country, no TLS fingerprint and no client
 protocol reach this tap, so `asn`, `country` and `tlsx` conditions cannot match here and `proto`
-is null on the event (camada never reads a forwarded protocol header for it). Behind a proxy,
-the peer is the proxy; set `trustedProxy` (or your tenant config) so `X-Forwarded-For` counts.
-Header order is normalised by the `Headers` object, so the raw-wire-order signal is not
+is null on the event (camada never reads a forwarded protocol header for it). Header order is normalised by the `Headers` object, so the raw-wire-order signal is not
 available either. The analyst knows all of this from the tap's capability mask (`sdk-deno`) and
 never scores an absence as evidence.
 
