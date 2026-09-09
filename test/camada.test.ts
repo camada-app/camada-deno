@@ -114,11 +114,11 @@ describe('capture', () => {
     expect(sdkHeaders.every((h) => h === '@camada/deno/0.1.0')).toBe(true);
   });
 
-  it('ships st null and rethrows when the handler throws — Deno.serve\'s onError owns the status', async () => {
+  it('ships st 500 and rethrows when the handler throws — Deno.serve answers a thrown handler with 500', async () => {
     const a = await primed();
     await expect(a(new Request('http://app.test/boom'), tcp('8.8.8.8'))).rejects.toThrow('handler bug');
     await settle();
-    expect(events.at(-1)).toMatchObject({ p: '/boom', st: null });
+    expect(events.at(-1)).toMatchObject({ p: '/boom', st: 500 });
   });
 });
 

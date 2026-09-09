@@ -66,8 +66,8 @@ secret. Without `CAMADA_KEY` the wrapper is inert (one log line, no requests, no
 6. **Challenge** → a `403` proof-of-work page (HTML navigations) or `403 {"error":"challenge_required"}`
    (everything else), verified at `POST /__camada/challenge`, which sets `_cch` and 302s back.
 7. Otherwise your handler runs; the settled response ships one batched, redacted event with its
-   real status. A handler that throws ships `st: null` and rethrows — `Deno.serve`'s `onError`
-   decides that status, and camada cannot see it. A first visit is given the `_sfp` session
+   real status. A handler that throws ships `st: 500` — what `Deno.serve` answers for it — and
+   rethrows (an `onError` answering with another status is not seen here). A first visit is given the `_sfp` session
    cookie (appended even to a `Response.redirect()`, whose headers are immutable).
 
 ## Options

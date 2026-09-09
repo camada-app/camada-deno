@@ -70,7 +70,7 @@ export function camada(opts: CamadaDenoOptions = {}): (handler: ServeHandler) =>
     try {
       res = await handler(req, info);
     } catch (err) {
-      cam.after(req, r.vars, null);   // Deno.serve's onError decides the status; camada cannot see it
+      cam.after(req, r.vars, 500);   // Deno.serve answers 500 for a thrown handler (an onError returning its own status is not visible here)
       throw err;
     }
     cam.after(req, r.vars, res.status);
