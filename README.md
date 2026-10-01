@@ -6,12 +6,10 @@ page and beacon, records the outcomes your handler knows (`track()`), and ships 
 batches off the response path. A thin binding over `@camada/core/fetch`, the pipeline every
 Web-fetch adapter shares. Fails open by design — a camada outage or bug never 5xxes your app.
 
-Not yet on npm — consumed via a `file:` dependency from a sibling checkout. Built with tsup like
-the rest of the workspace; there is no `deno.json` this round. From Deno, once published it is
-`npm:@camada/deno`; locally, an import-map entry pointing at the sibling build works:
+Published to npm (there is no JSR package yet). Import it with the `npm:` specifier, or map it once:
 
 ```json
-{ "imports": { "@camada/deno": "../camada-deno/dist/index.js" } }
+{ "imports": { "@camada/deno": "npm:@camada/deno" } }
 ```
 
 ## Quickstart
