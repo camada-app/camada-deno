@@ -68,7 +68,9 @@ secret. Without `CAMADA_KEY` the wrapper is inert (one log line, no requests, no
 7. Otherwise your handler runs; the settled response ships one batched, redacted event with its
    real status. A handler that throws ships `st: 500` — what `Deno.serve` answers for it — and
    rethrows (an `onError` answering with another status is not seen here). A first visit is given the `_sfp` session
-   cookie (appended even to a `Response.redirect()`, whose headers are immutable).
+   cookie (appended even to a `Response.redirect()`, whose headers are immutable). A WebSocket upgrade is the
+   exception: the `101` from `Deno.upgradeWebSocket()` goes back untouched, with no cookie, and ships `st` 101.
+   Deno before 2.6 stops `Deno.serve` if an upgrade response is copied.
 
 ## Options
 
