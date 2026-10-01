@@ -216,7 +216,11 @@ describe('WebSocket upgrade', () => {
 
   it('returns the runtime\'s 101 untouched, with no cookie on a first visit, and ships st 101', async () => {
     let upgrade = upgradeResponse();
-    const ws = camada({ fetchImpl })(() => upgrade);
+    // Deno 2.9: once Deno.upgradeWebSocket has run, reading the request throws "Request closed".
+    const ws = camada({ fetchImpl })((req) => {
+      for (const k of ['headers', 'url', 'method']) Object.defineProperty(req, k, { get: () => { throw new TypeError('Request closed'); } });
+      return upgrade;
+    });
     const handshake = (cookie?: string) =>
       ws(new Request('http://app.test/ws', { headers: { upgrade: 'websocket', ...(cookie ? { cookie } : {}) } }), tcp('8.8.8.8'));
     await handshake();   // cold: loads the snapshot
