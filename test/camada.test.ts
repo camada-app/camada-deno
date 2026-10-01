@@ -206,6 +206,33 @@ describe('session', () => {
   });
 });
 
+describe('WebSocket upgrade', () => {
+  /** What Deno.upgradeWebSocket returns: a 101 with immutable headers, which Deno < 2.6 refuses to see copied. */
+  const upgradeResponse = (): Response => {
+    const res = Response.error();   // immutable headers; undici will not build a 101 itself
+    Object.defineProperty(res, 'status', { value: 101 });
+    return res;
+  };
+
+  it('returns the runtime\'s 101 untouched, with no cookie on a first visit, and ships st 101', async () => {
+    let upgrade = upgradeResponse();
+    const ws = camada({ fetchImpl })(() => upgrade);
+    const handshake = (cookie?: string) =>
+      ws(new Request('http://app.test/ws', { headers: { upgrade: 'websocket', ...(cookie ? { cookie } : {}) } }), tcp('8.8.8.8'));
+    await handshake();   // cold: loads the snapshot
+    await settle();
+    for (const cookie of [undefined, '_sfp=known-sid']) {
+      upgrade = upgradeResponse();
+      events.length = 0;
+      const res = await handshake(cookie);
+      expect(res).toBe(upgrade);
+      expect(res.headers.get('set-cookie')).toBeNull();
+      await settle();
+      expect(events).toEqual([expect.objectContaining({ p: '/ws', st: 101 })]);
+    }
+  });
+});
+
 describe('first-party beacon', () => {
   it('serves the IIFE at GET /_cam/b.js and tags the page with the rid', async () => {
     const a = await primed();
