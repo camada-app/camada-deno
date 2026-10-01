@@ -73,8 +73,7 @@ export function camada(opts: CamadaDenoOptions = {}): (handler: ServeHandler) =>
       cam.after(req, r.vars, 500);   // Deno.serve answers 500 for a thrown handler (an onError returning its own status is not visible here)
       throw err;
     }
-    cam.after(req, r.vars, res.status);
-    return r.vars.sessionCookie ? withSetCookie(res, r.vars.sessionCookie) : res;
+    return cam.finish(req, r.vars, r.vars.sessionCookie ? withSetCookie(res, r.vars.sessionCookie) : res);   // ships once the body has gone out
   };
 }
 
