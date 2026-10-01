@@ -12,6 +12,8 @@ Needs `@camada/core` 0.5.0.
 
 ### Fixed
 
+- Path rules match the canonical path (through `@camada/core` 0.5.0). A percent-encoded,
+  upper-cased or trailing-slash spelling of a blocked path used to slip past the block.
 - A WebSocket upgrade goes back exactly as Deno made it, with no session cookie, and ships one
   event with `st: 101`. A first visit used to rebuild the 101, which stopped Deno.serve accepting
   connections on Deno < 2.6. On Deno 2.9 an upgrade used to ship no event, because the request is
