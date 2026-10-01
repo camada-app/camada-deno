@@ -73,6 +73,12 @@ export function camada(opts: CamadaDenoOptions = {}): (handler: ServeHandler) =>
       cam.after(req, r.vars, 500);   // Deno.serve answers 500 for a thrown handler (an onError returning its own status is not visible here)
       throw err;
     }
+    // A WebSocket upgrade must go back as the very Response Deno.upgradeWebSocket made: Deno < 2.6 stops
+    // Deno.serve over a copy, and its headers are immutable, so it gets no session cookie. It has no body to time.
+    if (res.status === 101) {
+      cam.after(req, r.vars, 101);
+      return res;
+    }
     return cam.finish(req, r.vars, r.vars.sessionCookie ? withSetCookie(res, r.vars.sessionCookie) : res);   // ships once the body has gone out
   };
 }
