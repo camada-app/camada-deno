@@ -105,6 +105,18 @@ beforeEach(() => { events = []; sdkHeaders = []; snapshotVersions = []; denoEnv 
 afterEach(() => { resetCamada(); delete g.Deno; vi.useRealTimers(); vi.unstubAllEnvs(); });
 
 describe('capture', () => {
+  it('sets x-rid to the event rid on answered responses (an immutable redirect included) and not on a block', async () => {
+    const a = await primed();
+    for (const path of ['/cart', '/redirect']) {
+      const res = await call(a, path);
+      expect(res.headers.get('x-rid'), path).toBe(events.find((e) => e.p === path)!.rid);
+    }
+    expect((await call(a, '/redirect')).headers.get('location')).toBe('http://app.test/');
+    const blocked = await call(a, '/', {}, tcp(BLOCKED_IP));
+    expect(blocked.status).toBe(403);
+    expect(blocked.headers.has('x-rid')).toBe(false);
+  });
+
   it('lets a request through with its real status, tapped sdk-deno and identified on every batch', async () => {
     const a = await primed();
     expect((await call(a, '/')).status).toBe(200);
