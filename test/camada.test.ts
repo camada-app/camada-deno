@@ -110,8 +110,8 @@ describe('capture', () => {
     for (const path of ['/cart', '/redirect']) {
       const res = await call(a, path);
       expect(res.headers.get('x-rid'), path).toBe(events.find((e) => e.p === path)!.rid);
+      if (path === '/redirect') expect(res.headers.get('location')).toBe('http://app.test/');
     }
-    expect((await call(a, '/redirect')).headers.get('location')).toBe('http://app.test/');
     const blocked = await call(a, '/', {}, tcp(BLOCKED_IP));
     expect(blocked.status).toBe(403);
     expect(blocked.headers.has('x-rid')).toBe(false);
