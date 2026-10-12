@@ -359,3 +359,29 @@ describe('timer mode', () => {
     expect(snapshotVersions).toHaveLength(2);
   });
 });
+
+describe('default timer mode (camada-all-7u3r)', () => {
+  // No `mode` option: what a user runs. Only the interval and the clock are faked.
+  const dflt = () => camada({ fetchImpl })(handler);
+
+  it('ships rows on the 15 s interval, not per request', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    const a = dflt();
+    for (let i = 0; i < 3; i++) await call(a, '/');
+    expect(sdkHeaders).toHaveLength(0);               // rows are queued, no POST per request
+    await vi.advanceTimersByTimeAsync(15_100);
+    await settle();
+    expect(sdkHeaders).toHaveLength(1);               // one batch
+    expect(events.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('drains on exit (beforeExit)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    const a = dflt();
+    await call(a, '/');
+    expect(sdkHeaders).toHaveLength(0);
+    process.emit('beforeExit', 0);                    // the handler timer mode installed
+    await settle();
+    expect(sdkHeaders).toHaveLength(1);
+  });
+});

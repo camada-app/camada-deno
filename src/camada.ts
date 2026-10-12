@@ -4,7 +4,8 @@
 // in as `ctx.peer` and core combines it with X-Forwarded-For under the trusted-proxy rules; a
 // client header on its own never becomes the ip. Deno is a long-lived process, so the snapshot
 // polls on a timer by default (CAMADA_SERVERLESS=1 or `mode: 'lazy'` for Deno Deploy), and there
-// is no `waitUntil`: the event flush is a fire-and-forget promise the process keeps alive.
+// is no `waitUntil`: in timer mode rows are queued and shipped in batches on the 15 s interval and
+// at exit (not one POST per request); `mode: 'lazy'` flushes per request.
 import iife from '@camada/browser/iife-string';
 import { TAP_DENO, logRateLimited } from '@camada/core';
 import { createFetchCamada, withSetCookie, track as coreTrack, scriptTag as coreScriptTag, type FetchCamada, type FetchCamadaOptions, type FetchVars } from '@camada/core/fetch';

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Default timer mode ships events on the 15 s interval (or at exit), batched, not one POST per request; pass `mode: 'lazy'` for per-request delivery. Needs the `@camada/core` that carries this change. (camada-all-7u3r)
+
 ### Changed
 
 - The `exports` map now gives `require` its own `.d.cts` declarations (`import` and `require` each carry a `types` condition), so a CommonJS TypeScript app on `moduleResolution: node16` compiles; CI runs `@arethetypeswrong/cli`. (camada-all-vuzm)
