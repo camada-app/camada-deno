@@ -125,7 +125,7 @@ describe('capture', () => {
     expect(events.some((e) => e.tap === 'sdk-deno' && e.p === '/' && e.st === 200)).toBe(true);
     expect(events.some((e) => e.p === '/nope' && e.st === 404)).toBe(true);
     expect(sdkHeaders.length).toBeGreaterThan(0);
-    expect(sdkHeaders.every((h) => h === '@camada/deno/0.1.3')).toBe(true);
+    expect(sdkHeaders.every((h) => h === '@camada/deno/0.1.4')).toBe(true);
   });
 
   it('ships st 500 and rethrows when the handler throws — Deno.serve answers a thrown handler with 500', async () => {
