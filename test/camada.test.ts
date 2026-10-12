@@ -68,7 +68,8 @@ async function handler(req: Request): Promise<Response> {
 }
 
 /** No opts.env: the key comes from the Deno stub, the way a real process is configured. */
-const app = (opts: CamadaDenoOptions = {}): WrappedHandler => camada({ fetchImpl, ...opts })(handler);
+// Lazy by default here: a timer-mode host with no waitUntil batches rows for the 15 s flush (camada-all-7u3r), and these tests read the event as soon as the request settles. The timer-mode tests ask for it.
+const app = (opts: CamadaDenoOptions = {}): WrappedHandler => camada({ fetchImpl, mode: 'lazy', ...opts })(handler);
 
 const tcp = (hostname: string): ServeHandlerInfo => ({ remoteAddr: { transport: 'tcp', hostname, port: 40000 } });
 const UNIX: ServeHandlerInfo = { remoteAddr: { transport: 'unix' } };
@@ -229,7 +230,7 @@ describe('WebSocket upgrade', () => {
   it('returns the runtime\'s 101 untouched, with no cookie on a first visit, and ships st 101', async () => {
     let upgrade = upgradeResponse();
     // Deno 2.9: once Deno.upgradeWebSocket has run, reading the request throws "Request closed".
-    const ws = camada({ fetchImpl })((req) => {
+    const ws = camada({ fetchImpl, mode: 'lazy' })((req) => {
       for (const k of ['headers', 'url', 'method']) Object.defineProperty(req, k, { get: () => { throw new TypeError('Request closed'); } });
       return upgrade;
     });
@@ -334,8 +335,8 @@ describe('the env', () => {
 describe('timer mode', () => {
   it('polls the snapshot on its own by default, and resetCamada() stops every instance', async () => {
     vi.useFakeTimers();
-    const a = app();
-    const b = app({ ingestUrl: 'http://other.test' });   // a second pipeline with its own engine
+    const a = app({ mode: 'timer' });
+    const b = app({ mode: 'timer', ingestUrl: 'http://other.test' });   // a second pipeline with its own engine
     await a(new Request('http://app.test/'), tcp('8.8.8.8'));
     await b(new Request('http://app.test/'), tcp('8.8.8.8'));
     expect(snapshotVersions).toHaveLength(2);
@@ -356,5 +357,31 @@ describe('timer mode', () => {
     await b(new Request('http://app.test/'), tcp('8.8.8.8'));
     await vi.advanceTimersByTimeAsync(31_000);
     expect(snapshotVersions).toHaveLength(2);
+  });
+});
+
+describe('default timer mode (camada-all-7u3r)', () => {
+  // No `mode` option: what a user runs. Only the interval and the clock are faked.
+  const dflt = () => camada({ fetchImpl })(handler);
+
+  it('ships rows on the 15 s interval, not per request', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    const a = dflt();
+    for (let i = 0; i < 3; i++) await call(a, '/');
+    expect(sdkHeaders).toHaveLength(0);               // rows are queued, no POST per request
+    await vi.advanceTimersByTimeAsync(15_100);
+    await settle();
+    expect(sdkHeaders).toHaveLength(1);               // one batch
+    expect(events.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('drains on exit (beforeExit)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    const a = dflt();
+    await call(a, '/');
+    expect(sdkHeaders).toHaveLength(0);
+    process.emit('beforeExit', 0);                    // the handler timer mode installed
+    await settle();
+    expect(sdkHeaders).toHaveLength(1);
   });
 });
