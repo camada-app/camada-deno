@@ -61,8 +61,9 @@ secret. Without `CAMADA_KEY` the wrapper is inert (one log line, no requests, no
 4. **Block** → `403` with `x-block-reason` before your handler; the event still ships, with
    `st: 403` and `blk: <reason>` so the analyst counts SDK blocks apart from your own 403s.
 5. **Skip** → a skip rule or the allow list wins over a wider block.
-6. **Challenge** → a `403` proof-of-work page (HTML navigations) or `403 {"error":"challenge_required"}`
-   (everything else), verified at `POST /__camada/challenge`, which sets `_cch` and 302s back.
+6. **Challenge** → a `403` proof-of-work page (HTML navigations); everything else passes to your
+   app with `x-camada-challenge: 1` on the response (and `chs: 1` on the event) so your frontend can
+   choose to challenge. The solve is verified at `POST /__camada/challenge`, which sets `_cch` and 302s back.
 7. Otherwise your handler runs; the settled response ships one batched, redacted event with its
    real status. A handler that throws ships `st: 500` — what `Deno.serve` answers for it — and
    rethrows (an `onError` answering with another status is not seen here). A first visit is given the `_sfp` session
