@@ -165,6 +165,15 @@ describe('enforcement', () => {
   });
 });
 
+describe('a non-HTML request under a challenge', () => {
+  it('passes to the app carrying x-camada-challenge: 1', async () => {
+    const a = await primed();
+    const res = await call(a, '/cart', { headers: { accept: 'application/json' } }, tcp(CHALLENGED_IP));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('x-camada-challenge')).toBe('1');
+  });
+});
+
 describe('the peer', () => {
   it('is the TCP remoteAddr Deno vouches for', async () => {
     const a = await primed();
