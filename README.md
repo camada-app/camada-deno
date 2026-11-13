@@ -1,10 +1,12 @@
 # @camada/deno
 
+[Frameworks](https://www.camada.app/frameworks) · [Docs](https://www.camada.app/docs) · [Bot detection](https://www.camada.app/bot-detection) · [Bot signal test](https://www.camada.app/tools/bot-test) · [Pricing](https://www.camada.app/pricing).
+
 camada for [Deno](https://deno.com) `Deno.serve`: enforces the tenant snapshot inline (your
 ordered custom rules, then block, allow, challenge), serves a first-party proof-of-work challenge
 page and beacon, records the outcomes your handler knows (`track()`), and ships wire events in
 batches off the response path. A thin binding over `@camada/core/fetch`, the pipeline every
-Web-fetch adapter shares. Fails open by design — a camada outage or bug never 5xxes your app.
+Web-fetch adapter shares. Fails open by design: a camada outage or bug never 5xxes your app.
 
 Published to npm (there is no JSR package yet). Import it with the `npm:` specifier, or map it once:
 
@@ -21,7 +23,7 @@ Deno.serve(camada()((req, info) => new Response('hello')));
 ```
 
 Env (printed by camada onboarding / `npm run seed` in dev), read key by key through
-`Deno.env.get` — run with `--allow-env`, or the granular
+`Deno.env.get`. Run with `--allow-env`, or the granular
 `--allow-env=CAMADA_KEY,CAMADA_INGEST_URL,CAMADA_SNAPSHOT_URL` (a key outside the grant simply
 reads as unset):
 
@@ -32,7 +34,7 @@ CAMADA_INGEST_URL=http://localhost:8787        # dev only; defaults to productio
 
 `camada()` reads the env on each request and builds its engine on the first configured one; a
 denied env read (no `--allow-env` at all) is caught, logged as denied at most once a minute, and
-leaves the wrapper inert — the app still answers. An app that reads its own config can pass the values instead:
+leaves the wrapper inert so the app still answers. An app that reads its own config can pass the values instead:
 
 ```ts
 Deno.serve(camada({ key: MY_KEY, ingestUrl: MY_INGEST })(handler));
@@ -40,7 +42,7 @@ Deno.serve(camada({ key: MY_KEY, ingestUrl: MY_INGEST })(handler));
 
 Call `camada()` once and reuse the wrapper. Engines are cached per resolved configuration, so
 wrapping two handlers with the same config shares one snapshot poller and one event queue,
-while two wrappers with different keys or URLs each get their own — a process hosting several
+while two wrappers with different keys or URLs each get their own: a process hosting several
 apps never enforces one tenant's snapshot on another, nor signs its cookies with another's
 secret. Without `CAMADA_KEY` the wrapper is inert (one log line, no requests, no enforcement).
 
@@ -51,8 +53,8 @@ secret. Without `CAMADA_KEY` the wrapper is inert (one log line, no requests, no
    `mode: 'lazy'`) switches to a per-request staleness check for Deno Deploy, where an isolate
    may be frozen between requests. Every poll and event batch carries
    `x-camada-sdk: @camada/deno/<version>`, and polls ask for snapshot v5
-   (`x-camada-snapshot: 5`) — the container that carries your ordered custom rules.
-2. Resolves the client from `info.remoteAddr` — the TCP peer Deno vouches for — combined with
+   (`x-camada-snapshot: 5`), the container that carries your ordered custom rules.
+2. Resolves the client from `info.remoteAddr` (the TCP peer Deno vouches for), combined with
    `X-Forwarded-For` only under your tenant's trusted-proxy config. A client header on its own
    (`x-forwarded-for`, `x-real-ip`, `cf-connecting-ip`) is never the ip: any caller can set it.
    Over a unix socket there is no peer, so the ip is null: the request is still captured, but
@@ -65,7 +67,7 @@ secret. Without `CAMADA_KEY` the wrapper is inert (one log line, no requests, no
    app with `x-camada-challenge: 1` on the response (and `chs: 1` on the event) so your frontend can
    choose to challenge. The solve is verified at `POST /__camada/challenge`, which sets `_cch` and 302s back.
 7. Otherwise your handler runs; the settled response ships one batched, redacted event with its
-   real status. A handler that throws ships `st: 500` — what `Deno.serve` answers for it — and
+   real status. A handler that throws ships `st: 500` (what `Deno.serve` answers for it) and
    rethrows (an `onError` answering with another status is not seen here). A first visit is given the `_sfp` session
    cookie (appended even to a `Response.redirect()`, whose headers are immutable). A WebSocket upgrade is the
    exception: the `101` from `Deno.upgradeWebSocket()` goes back untouched, with no cookie, and ships `st` 101.
@@ -103,10 +105,10 @@ Deno.serve(camada()((req) =>
   new Response(`<html><head>${scriptTag(req)}</head><body>…</body></html>`, { headers: { 'content-type': 'text/html' } })));
 ```
 
-`scriptTag(req)` returns `<script src="/_cam/b.js?r=<rid>" async></script>` — the `rid` is this
+`scriptTag(req)` returns `<script src="/_cam/b.js?r=<rid>" async></script>`: the `rid` is this
 request's event id, so the analyst joins the beacon to the page view. The wrapper serves the
 script at `GET /_cam/b.js` (cacheable, 1 h) and relays `POST /_cam/fp` (≤ 32 KB, answers 204)
-onto the event batch as a `sig: 1` row stamped with the client ip camada resolved — never the
+onto the event batch as a `sig: 1` row stamped with the client ip camada resolved, never the
 one the body claims. Both endpoints sit behind the verdict: a blocked client gets 403 there
 too. The tag is `''` when camada is off for the request or the project turned the beacon off
 in its settings, and the endpoints stand down with it. `scriptTag` and `track` find their
@@ -127,7 +129,7 @@ Deno.serve(camada()(async (req) => {
 ```
 
 `track(req, event, { user? })` ships `{ et, uid, rid, sid, ip, ts }` joined to this request's event.
-The user identifier is HMAC-hashed in-process with the ingest token — the raw value never leaves
+The user identifier is HMAC-hashed in-process with the ingest token: the raw value never leaves
 the process. It never throws and is a no-op where the wrapper did not run. The event name is
 free-form; the analyst's rules read this vocabulary:
 
@@ -153,3 +155,13 @@ available either.
 
 Every entry point runs inside camada's guard. A dead ingest, a corrupt snapshot, a denied env
 read, a bug in this package: telemetry is lost, the request is not.
+
+## Docs and links
+
+Read the guides on [camada.app](https://www.camada.app/docs).
+
+- [Frameworks](https://www.camada.app/frameworks): browse all server SDKs and Web-fetch adapters.
+- [Custom rules](https://www.camada.app/docs/rules) and [Challenge](https://www.camada.app/docs/challenge): order your rules and tune browser checks.
+- [Bot detection](https://www.camada.app/bot-detection): see how snapshots, beacons, and `track()` catch bots.
+- [Bot signal test](https://www.camada.app/tools/bot-test): check live browser, HTTP, and TLS signals from your client.
+- [Pricing](https://www.camada.app/pricing): compare the free tier and paid plans.

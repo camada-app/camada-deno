@@ -18,6 +18,28 @@
     "check": "tsc --noEmit"
   },
   "description": "camada SDK for Deno.serve: snapshot enforcement, first-party challenge and beacon, track() outcomes, timer-polled snapshot and batched event shipping",
+  "homepage": "https://www.camada.app/frameworks",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/camada-app/camada-deno.git"
+  },
+  "bugs": {
+    "url": "https://github.com/camada-app/camada-deno/issues"
+  },
+  "keywords": [
+    "camada",
+    "deno",
+    "deno-deploy",
+    "typescript",
+    "bot-detection",
+    "bot-protection",
+    "credential-stuffing",
+    "account-takeover",
+    "rate-limiting",
+    "proof-of-work",
+    "ai-scraper",
+    "security"
+  ],
   "exports": {
     ".": {
       "import": {
