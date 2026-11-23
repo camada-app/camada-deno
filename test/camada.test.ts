@@ -105,6 +105,37 @@ const postBeacon = (a: WrappedHandler, body: string, addr = '9.9.9.9') =>
 beforeEach(() => { events = []; sdkHeaders = []; snapshotVersions = []; denoEnv = envOf(ENV); installDeno(); });
 afterEach(() => { resetCamada(); delete g.Deno; vi.useRealTimers(); vi.unstubAllEnvs(); });
 
+describe('credential hash', () => {
+  const env = { ...ENV, CAMADA_KEY: 'ct_test_fixture_key.snap-test' };
+  beforeEach(() => { denoEnv = envOf(env); });
+  const headers = { authorization: 'Bearer fake-token-0001-not-a-real-credential' };
+
+  it('omits tk from the shipped event by default', async () => {
+    const a = await primed();
+    await call(a, '/cart', { headers });
+    const event = events.find((e) => e.p === '/cart');
+    expect(event).toMatchObject({ st: 200, auth: 'Bearer' });
+    expect(event).not.toHaveProperty('tk');
+  });
+
+  it('ships tk when tokenHash is enabled', async () => {
+    const a = await primed({ tokenHash: true });
+    await call(a, '/cart', { headers });
+    await vi.waitFor(() => expect(events.find((e) => e.p === '/cart')).toMatchObject({
+      st: 200, tk: 'b3a18c6c56d5a2f7ad636bf950a919d7',
+    }));
+  });
+
+  it('ships tk when CAMADA_TOKEN_HASH=1 in Deno.env', async () => {
+    denoEnv = envOf({ ...env, CAMADA_TOKEN_HASH: '1' });
+    const a = await primed();
+    await call(a, '/cart', { headers });
+    await vi.waitFor(() => expect(events.find((e) => e.p === '/cart')).toMatchObject({
+      st: 200, tk: 'b3a18c6c56d5a2f7ad636bf950a919d7',
+    }));
+  });
+});
+
 describe('capture', () => {
   it('sets x-rid to the event rid on answered responses (an immutable redirect included) and not on a block', async () => {
     const a = await primed();
