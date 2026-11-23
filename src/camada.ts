@@ -32,7 +32,7 @@ const slots = new WeakMap<Request, FetchVars>();
 
 /** Every key core reads, fetched one by one: `Deno.env.get` works under a granular
  *  `--allow-env=CAMADA_KEY,…` grant, where `toObject()` (and enumerating `process.env`) throws. */
-const ENV_KEYS = ['CAMADA_KEY', 'CAMADA_TOKEN', 'CAMADA_SNAPSHOT_TOKEN', 'CAMADA_INGEST_URL', 'CAMADA_SNAPSHOT_URL', 'CAMADA_TRUSTED_PROXY', 'CAMADA_CHALLENGE', 'CAMADA_DISABLED', 'CAMADA_SERVERLESS'];
+const ENV_KEYS = ['CAMADA_KEY', 'CAMADA_TOKEN', 'CAMADA_SNAPSHOT_TOKEN', 'CAMADA_INGEST_URL', 'CAMADA_SNAPSHOT_URL', 'CAMADA_TRUSTED_PROXY', 'CAMADA_CHALLENGE', 'CAMADA_DISABLED', 'CAMADA_SERVERLESS', 'CAMADA_TOKEN_HASH', 'CAMADA_TOKEN_HEADER'];
 
 /** Deno.env where there is a Deno (a Node test process has only process.env). A key the grant does
  *  not cover throws NotCapable; that costs enforcement, never the response, and is logged as what it is. */
